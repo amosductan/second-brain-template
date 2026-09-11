@@ -1,0 +1,25 @@
+{
+  "name": "second-brain",
+  "version": "1.0.0",
+  "description": "A self-hosted second brain: talk into your phone, and every note is transcribed, filed, searchable and ready to chat with.",
+  "type": "module",
+  "main": "server/index.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "check": "node scripts/llm_check.mjs",
+    "costs": "node scripts/costs.mjs",
+    "demo": "node scripts/demo_seed.mjs",
+    "backup": "node scripts/backup_db.mjs",
+    "test": "node scripts/run_tests.mjs"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
+    "express": "^4.22.2",
+    "multer": "^2.3.0"
+  }
+}

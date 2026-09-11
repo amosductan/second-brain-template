@@ -1,0 +1,8 @@
+# Allowlist: nothing goes into the image unless it's named here. Keeps your
+# data/ folder (every recording and transcript) and .env out of any image.
+*
+!package.json
+!package-lock.json
+!server/**
+!public/**
+!scripts/**
