@@ -1,6 +1,6 @@
 # Second Brain
 
-Talk into your phone. Every note is transcribed, titled, summarized, filed into a category that
+Talk into your phone or upload a recorded voice file. Every note is transcribed, titled, summarized, filed into a category that
 grows with you, and turned into action items. Then you can search everything you've ever said, or
 ask it questions.
 
@@ -49,15 +49,15 @@ reported. `npm run costs` shows the total, per note and per model.
 For scale: the original app, used heavily for a month (249 notes, about 2,070 minutes of audio), was
 reconstructed from its own record at about $30, or roughly $0.12 a note. Transcription was the
 largest single piece ($12.42), and filing notes with an Opus-class model was $11.58. That estimate
-excluded chat, which wasn't logged then. It is now.
+excludes chat which has been used minimally in the original app
 
-A cheaper model cuts the filing cost further. Set `CATEGORIZER_MODEL` in `.env` and compare with
+A cheaper model cuts the filing cost even more. Set `CATEGORIZER_MODEL` in `.env` and compare with
 `npm run costs`.
 
 ## Set it up
 
 You need Node.js 22.5 or newer (the database is Node's built-in SQLite), ffmpeg for recordings over
-about 25 minutes, and keys for the providers you choose.
+about 25 minutes, and API keys for the providers you choose.
 
 ```bash
 git clone <this repo>
