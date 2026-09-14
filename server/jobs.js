@@ -1,3 +1,6 @@
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import { uploadDir } from './config.js';
 import { getNote, updateNote, notesByStatus } from './db.js';
 import { transcribeAudio, transcriptionAvailable } from './transcribe.js';
 import { categorizeNote, categorizerAvailable } from './agents/categorizer.js';
@@ -65,9 +68,30 @@ async function processNote(id) {
   }
 }
 
+// Ingest reserves a note's final audio path in the DB, THEN moves the staged
+// upload into audio/. A crash between the two left a note pointing at a file
+// that never arrived (it failed transcription with ENOENT) while the complete
+// recording sat in uploads/. Finish the move before anything is requeued.
+export async function recoverReservedUploads(notes = notesByStatus(['captured', 'transcribing', 'categorizing'])) {
+  let moved = 0;
+  for (const n of notes) {
+    if (!n.audio_path) continue;
+    const exists = await fsp.access(n.audio_path).then(() => true, () => false);
+    if (exists) continue;
+    const staged = path.join(uploadDir, path.basename(n.audio_path));
+    try {
+      await fsp.rename(staged, n.audio_path);
+      moved++;
+      console.log(`[jobs] recovered staged upload for note ${n.id}`);
+    } catch { /* nothing staged under that name: transcription reports the missing file */ }
+  }
+  return moved;
+}
+
 // On startup, requeue anything that was mid-pipeline when the server last stopped.
-export function resumePending() {
+export async function resumePending() {
   const pending = notesByStatus(['captured', 'transcribing', 'categorizing']);
+  await recoverReservedUploads(pending);
   for (const n of pending) enqueue(n.id);
   if (pending.length) console.log(`[jobs] resumed ${pending.length} pending note(s)`);
 }

@@ -20,7 +20,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { audioDir, config } from '../server/config.js';
+import { audioDir, uploadDir, config } from '../server/config.js';
 import { referencedAudioPaths, prunableAudioNotes, markAudioPruned } from '../server/db.js';
 
 const args = process.argv.slice(2);
@@ -35,6 +35,8 @@ if (!Number.isFinite(RETENTION_DAYS) || RETENTION_DAYS < 1) {
   console.error(`[prune] refusing to run with retention "${RETENTION_DAYS}" — must be >= 1 day`);
   process.exit(2);
 }
+
+const STAGING_MAX_HOURS = Number(process.env.STAGING_MAX_HOURS || 24);
 
 const logDir = path.join(config.dataDir, 'logs');
 const logFile = path.join(logDir, 'prune.log');
@@ -114,6 +116,26 @@ function main() {
       markAudioPruned(note.id); // only after the file is actually gone
     }
     reclaimed += bytes;
+    deleted++;
+  }
+
+  // ---- 3. abandoned staging files ----
+  // Uploads are written to DATA_DIR/uploads and moved into audio/ once a note
+  // row reserves them. A server killed mid-upload leaves the partial file there,
+  // and nothing else ever removes it. A file still being written keeps a fresh
+  // mtime, so only ones untouched for STAGING_MAX_HOURS go — and never one a
+  // note still claims by name (the server finishes that move on its next boot).
+  const stagingCutoff = Date.now() - STAGING_MAX_HOURS * 3600000;
+  const claimedNames = new Set(referencedAudioPaths().map((p) => path.basename(p).toLowerCase()));
+  const staged = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir) : [];
+  for (const name of staged) {
+    const full = path.join(uploadDir, name);
+    let st;
+    try { st = fs.statSync(full); } catch { continue; }
+    if (!st.isFile() || st.mtimeMs > stagingCutoff || claimedNames.has(name.toLowerCase())) continue;
+    log(`stale upload: ${name} (${mb(st.size)}) - staged ${Math.floor((Date.now() - st.mtimeMs) / 3600000)}h ago, never completed`);
+    if (!dryRun) fs.rmSync(full, { force: true });
+    reclaimed += st.size;
     deleted++;
   }
 

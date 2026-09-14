@@ -1041,6 +1041,9 @@ loadCategories();
 
 let notesOffset = 0;
 let notesGeneration = 0;
+// Offsets shift when a note arrives between pages (newest-first), so Load more
+// can hand back a note that is already on screen. Skip what is already shown.
+const shownNoteIds = new Set();
 const NOTES_PAGE_SIZE = 100;
 $('#notes-more').addEventListener('click', () => refreshNotes(true));
 
@@ -1062,14 +1065,16 @@ async function refreshNotes(append = false) {
     const notes = await res.json();
     if (generation !== notesGeneration) return;
     const list = $('#notes-list');
-    if (!append) list.innerHTML = '';
+    if (!append) { list.innerHTML = ''; shownNoteIds.clear(); }
     notesOffset += notes.length;
     more.hidden = notes.length < NOTES_PAGE_SIZE;
     if (!notesOffset) {
       list.innerHTML = '<div class="empty">Nothing here yet. Go say something.</div>';
       return;
     }
-    list.insertAdjacentHTML('beforeend', notes.map(noteCard).join(''));
+    const fresh = notes.filter((n) => !shownNoteIds.has(n.id));
+    for (const n of fresh) shownNoteIds.add(n.id);
+    list.insertAdjacentHTML('beforeend', fresh.map(noteCard).join(''));
     $$('.note-card[data-id]').forEach((card) => {
       card.onclick = () => openNote(card.dataset.id);
     });

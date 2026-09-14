@@ -19,7 +19,7 @@ const server = app.listen(config.port, host, () => {
   console.log(`  transcription:  ${transcriptionAvailable() ? 'on (' + config.transcribe.model + ')' : 'OFF (set OPENAI_API_KEY or TRANSCRIBE_API_KEY)'}`);
   console.log(`  model:          ${llmDescription() === 'off' ? 'OFF (set a provider in .env)' : llmDescription()}`);
   console.log(`  auth:           ${config.authToken ? 'bearer token required' : 'open (set AUTH_TOKEN before exposing it beyond this machine)'}`);
-  resumePending();
+  resumePending().catch((err) => console.error('[jobs] resume failed:', err.message));
 });
 
 // Graceful shutdown: checkpoint + close the DB so the .db file is self-contained

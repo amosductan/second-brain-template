@@ -1,7 +1,6 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'node:path';
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import crypto from 'node:crypto';
 import { config, audioDir, uploadDir } from './config.js';
@@ -18,9 +17,13 @@ import { categorizerAvailable } from './agents/categorizer.js';
 const upload = multer({
   storage: multer.diskStorage({
     destination: uploadDir,
-    filename: (_req, file, cb) => {
+    filename: (req, file, cb) => {
       const ext = path.extname(file.originalname || '') || guessExt(file.mimetype);
-      cb(null, `${Date.now()}-${crypto.randomUUID()}${ext}`);
+      const name = `${Date.now()}-${crypto.randomUUID()}${ext}`;
+      // Remembered so an upload the client abandons mid-body can be cleaned up:
+      // multer never calls back in that case, so req.file is never set.
+      (req.stagedUploads ||= []).push(path.join(uploadDir, name));
+      cb(null, name);
     },
   }),
   limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2 GB — long recordings are the whole point
@@ -189,7 +192,21 @@ api.get('/usage', (req, res) => {
 function ingestUpload(req, res, next) {
   const lengthHeader = req.headers['content-length'];
   const declared = Number(lengthHeader || 0);
+  // A client that drops the connection mid-body (phone loses signal, tab is
+  // frozen) never gets multer's callback: busboy just stops, req.file is never
+  // set, and the partial file sat in uploads/ forever. Every 30s outbox retry of
+  // a long recording on a bad link wrote another one. The phone still holds the
+  // complete recording and retries it, so the server's fragment is redundant.
+  let multerDone = false;
+  res.on('close', () => {
+    if (multerDone || res.writableFinished || !req.stagedUploads?.length) return;
+    // Give multer's write stream a moment to release the handle first.
+    setTimeout(() => {
+      for (const p of req.stagedUploads) fsp.rm(p, { force: true }).catch(() => {});
+    }, 250).unref();
+  });
   upload.single('audio')(req, res, async (err) => {
+    multerDone = true;
     if (!err) return next();
     const written = req.file && typeof req.file.size === 'number' ? req.file.size : 0;
     console.error(
@@ -275,12 +292,16 @@ api.post('/ingest', ingestUpload, async (req, res) => {
 });
 
 // ---- notes ----
+// SQLite rejects a non-integer LIMIT/OFFSET ("datatype mismatch", a 500) and
+// treats a negative LIMIT as "no limit", so both are clamped to whole numbers.
+const intParam = (v, fallback, min, max) => Math.max(min, Math.min(Math.floor(Number(v)) || fallback, max));
+
 api.get('/notes', (req, res) => {
   res.json(listNotes({
     category: req.query.category || null,
     status: req.query.status || null,
-    limit: Math.min(Number(req.query.limit) || 100, 500),
-    offset: Number(req.query.offset) || 0,
+    limit: intParam(req.query.limit, 100, 1, 500),
+    offset: intParam(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER),
   }));
 });
 
@@ -312,8 +333,15 @@ api.get('/notes/:id/audio', async (req, res) => {
   if (!note || !note.audio_path || !(await fileExists(note.audio_path))) {
     return res.status(404).json({ error: 'No audio for this note' });
   }
+  // sendFile, not a bare createReadStream().pipe(): Safari will not play or seek
+  // media from a server that ignores Range requests (it asks for bytes=0-1 and
+  // expects a 206), and an unhandled read-stream error (file pruned between the
+  // check and the read) would crash the whole process. dotfiles:'allow' because
+  // DATA_DIR may legitimately live under a dot-folder.
   res.type(note.audio_mime || 'application/octet-stream');
-  fs.createReadStream(note.audio_path).pipe(res);
+  res.sendFile(path.resolve(note.audio_path), { dotfiles: 'allow' }, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'No audio for this note' });
+  });
 });
 
 // Re-run the pipeline (after fixing an API key, installing ffmpeg, etc.)
