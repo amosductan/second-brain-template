@@ -229,11 +229,15 @@ export function markAudioPruned(id) {
     .run(now(), now(), id);
 }
 
+const CATEGORY_SUBTREE = '(WITH RECURSIVE sub(id) AS (SELECT ? UNION SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id) SELECT id FROM sub)';
+
 export function listNotes({ category = null, status = null, limit = 100, offset = 0 } = {}) {
   let sql = 'SELECT * FROM notes';
   const where = [];
   const vals = [];
-  if (category) { where.push('category_id = ?'); vals.push(category); }
+  // A category includes its subcategories: picking a parent must not hide
+  // notes filed under its children. Resolved in SQL, before LIMIT.
+  if (category) { where.push(`category_id IN ${CATEGORY_SUBTREE}`); vals.push(category); }
   if (status) { where.push('status = ?'); vals.push(status); }
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
   sql += ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
@@ -255,7 +259,7 @@ export function searchNotes(query, { limit = 10, offset = 0, category = null } =
     SELECT n.*, bm25(notes_fts) AS rank
     FROM notes_fts f JOIN notes n ON n.rowid = f.rowid
     WHERE notes_fts MATCH ?
-    ${category ? 'AND n.category_id = ?' : ''}
+    ${category ? `AND n.category_id IN ${CATEGORY_SUBTREE}` : ''}
     ORDER BY rank, n.id LIMIT ? OFFSET ?
   `).all(ftsQuery, ...(category ? [category] : []), limit, offset);
   return rows.map(hydrate);

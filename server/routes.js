@@ -52,10 +52,18 @@ function guessExt(mime = '') {
 
 export const api = express.Router();
 
+// Constant-time secret comparison: a plain === leaks how many leading characters
+// matched. Different lengths return false without throwing.
+export function safeEqual(a, b) {
+  const x = Buffer.from(String(a ?? ''));
+  const y = Buffer.from(String(b ?? ''));
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+}
+
 // HttpOnly session cookies also authenticate native audio playback and uploads.
 const sessionToken = crypto.randomBytes(32).toString('hex');
 api.post('/session', (req, res) => {
-  if (config.authToken && req.body?.token !== config.authToken) {
+  if (config.authToken && !safeEqual(req.body?.token, config.authToken)) {
     return res.status(401).json({ error: 'Incorrect access token' });
   }
   res.cookie('sb_session', sessionToken, {
@@ -69,8 +77,8 @@ api.post('/session', (req, res) => {
 api.use((req, res, next) => {
   if (!config.authToken) return next();
   const header = req.headers.authorization || '';
-  if (header === `Bearer ${config.authToken}`) return next();
-  if ((req.headers.cookie || '').split(';').some((c) => c.trim() === `sb_session=${sessionToken}`)) return next();
+  if (safeEqual(header, `Bearer ${config.authToken}`)) return next();
+  if ((req.headers.cookie || '').split(';').some((c) => safeEqual(c.trim(), `sb_session=${sessionToken}`))) return next();
   res.status(401).json({ error: 'Unauthorized' });
 });
 

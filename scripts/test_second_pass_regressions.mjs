@@ -180,6 +180,44 @@ try {
     assert.equal(ids.length, 120);
   });
 
+  await check('a parent category includes its subcategories', async () => {
+    const parent = db.findCategoryByPath('Ideas');
+    const child = db.createCategory({ name: 'Subtree Test', parentPath: 'Ideas', createdBy: 'user' });
+    const note = db.insertNote({ source: 'text', transcript: 'subtreeneedle' });
+    try {
+      db.updateNote(note.id, { category_id: child.id, status: 'ready' });
+      const browse = await (await fetch(`${base}/api/notes?category=${parent.id}`, { headers })).json();
+      assert.ok(browse.some((n) => n.id === note.id), 'browse by parent missed a subcategory note');
+      const found = await (await fetch(`${base}/api/notes/search?q=subtreeneedle&category=${parent.id}`, { headers })).json();
+      assert.deepEqual(found.map((n) => n.id), [note.id], 'search by parent missed a subcategory note');
+      const leaf = await (await fetch(`${base}/api/notes?category=${child.id}`, { headers })).json();
+      assert.deepEqual(leaf.map((n) => n.id), [note.id]);
+    } finally {
+      db.deleteNote(note.id);
+    }
+  });
+
+  await check('tokens are compared in constant time and never throw', async () => {
+    const routes = await import('../server/routes.js');
+    assert.equal(typeof routes.safeEqual, 'function', 'no constant-time comparison');
+    assert.equal(routes.safeEqual('abc', 'abc'), true);
+    assert.equal(routes.safeEqual('abd', 'abc'), false);
+    assert.equal(routes.safeEqual('ab', 'abc'), false);
+    assert.equal(routes.safeEqual(undefined, 'abc'), false);
+    const status = async (h) => (await fetch(`${base}/api/notes?limit=1`, { headers: h })).status;
+    assert.equal(await status({ authorization: `Bearer ${TOKEN}` }), 200);
+    assert.equal(await status({ authorization: `Bearer ${TOKEN.replace(/.$/, 'X')}` }), 401);
+    assert.equal(await status({ authorization: 'Bearer short' }), 401);
+    assert.equal(await status({ cookie: 'sb_session=nope; other=1' }), 401);
+    const login = async (token) => (await fetch(`${base}/api/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+    })).status;
+    assert.equal(await login(TOKEN), 200);
+    assert.equal(await login(TOKEN.toUpperCase()), 401);
+    assert.equal(await login('x'), 401);
+    assert.equal(await login(12345), 401);
+  });
+
   if (failures.length) {
     console.log(`\n${failures.length} FAILED, ${passed} passed`);
     process.exitCode = 1;
