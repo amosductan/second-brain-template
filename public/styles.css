@@ -203,3 +203,6 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
 }
 #note-modal-body ul { margin: 8px 0 0 18px; }
 #note-modal-body audio { width: 100%; margin-top: 10px; }
+
+#auth-form { padding: 16px; }
+#auth-form[hidden], #notes-more[hidden] { display: none; }

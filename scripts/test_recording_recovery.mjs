@@ -200,6 +200,10 @@ try {
 
   // ===== 1. wake lock =====
   console.log('1. screen wake lock');
+  ctx.on('page', (p) => {
+    p.on('pageerror', (err) => console.error('[browser]', err.message));
+    p.on('dialog', async (dialog) => { console.error('[browser dialog]', dialog.message()); await dialog.dismiss(); });
+  });
   let page = await ctx.newPage();
   await page.goto(BASE);
   await page.waitForSelector('#record-btn');

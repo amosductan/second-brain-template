@@ -236,7 +236,7 @@ export function listNotes({ category = null, status = null, limit = 100, offset 
   if (category) { where.push('category_id = ?'); vals.push(category); }
   if (status) { where.push('status = ?'); vals.push(status); }
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
-  sql += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+  sql += ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
   vals.push(limit, offset);
   return db.prepare(sql).all(...vals).map(hydrate);
 }
@@ -246,7 +246,7 @@ export function notesByStatus(statuses) {
   return db.prepare(`SELECT * FROM notes WHERE status IN (${placeholders}) ORDER BY created_at ASC`).all(...statuses).map(hydrate);
 }
 
-export function searchNotes(query, { limit = 10 } = {}) {
+export function searchNotes(query, { limit = 10, offset = 0, category = null } = {}) {
   // Sanitize into a simple OR query of quoted terms so user input can't break FTS syntax.
   const terms = query.split(/\s+/).filter(Boolean).map((t) => `"${t.replace(/"/g, '')}"`);
   if (!terms.length) return [];
@@ -255,8 +255,9 @@ export function searchNotes(query, { limit = 10 } = {}) {
     SELECT n.*, bm25(notes_fts) AS rank
     FROM notes_fts f JOIN notes n ON n.rowid = f.rowid
     WHERE notes_fts MATCH ?
-    ORDER BY rank LIMIT ?
-  `).all(ftsQuery, limit);
+    ${category ? 'AND n.category_id = ?' : ''}
+    ORDER BY rank, n.id LIMIT ? OFFSET ?
+  `).all(ftsQuery, ...(category ? [category] : []), limit, offset);
   return rows.map(hydrate);
 }
 

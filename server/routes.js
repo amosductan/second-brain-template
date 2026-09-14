@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import crypto from 'node:crypto';
-import { config, audioDir } from './config.js';
+import { config, audioDir, uploadDir } from './config.js';
 import {
   insertNote, getNote, updateNote, deleteNote, listNotes, searchNotes,
   listCategories, categoryTreeText, stats,
@@ -17,7 +17,7 @@ import { categorizerAvailable } from './agents/categorizer.js';
 
 const upload = multer({
   storage: multer.diskStorage({
-    destination: audioDir,
+    destination: uploadDir,
     filename: (_req, file, cb) => {
       const ext = path.extname(file.originalname || '') || guessExt(file.mimetype);
       cb(null, `${Date.now()}-${crypto.randomUUID()}${ext}`);
@@ -49,11 +49,25 @@ function guessExt(mime = '') {
 
 export const api = express.Router();
 
+// HttpOnly session cookies also authenticate native audio playback and uploads.
+const sessionToken = crypto.randomBytes(32).toString('hex');
+api.post('/session', (req, res) => {
+  if (config.authToken && req.body?.token !== config.authToken) {
+    return res.status(401).json({ error: 'Incorrect access token' });
+  }
+  res.cookie('sb_session', sessionToken, {
+    httpOnly: true, sameSite: 'strict', path: '/api',
+    secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
+  });
+  res.json({ ok: true });
+});
+
 // Optional bearer-token auth for all API routes (set AUTH_TOKEN in .env).
 api.use((req, res, next) => {
   if (!config.authToken) return next();
   const header = req.headers.authorization || '';
   if (header === `Bearer ${config.authToken}`) return next();
+  if ((req.headers.cookie || '').split(';').some((c) => c.trim() === `sb_session=${sessionToken}`)) return next();
   res.status(401).json({ error: 'Unauthorized' });
 });
 
@@ -237,12 +251,20 @@ api.post('/ingest', ingestUpload, async (req, res) => {
         error: 'Upload contained no audio (0 bytes) — nothing was recorded, so it will not be retried.',
       });
     }
+    const finalPath = path.join(audioDir, path.basename(req.file.path));
     note = insertNote({
       source: req.body?.source === 'live' ? 'live' : 'upload',
-      audioPath: req.file.path,
+      audioPath: finalPath,
       audioMime: req.file.mimetype,
       audioOriginalName: req.file.originalname || null,
     });
+    // Reserve the final path in the DB before publishing the file to cleanup's directory.
+    try {
+      await fsp.rename(req.file.path, finalPath);
+    } catch (err) {
+      deleteNote(note.id);
+      return res.status(500).json({ error: 'Could not store audio; please retry.' });
+    }
   } else if (req.body && typeof req.body.text === 'string' && req.body.text.trim()) {
     note = insertNote({ source: 'text', transcript: req.body.text.trim() });
   } else {
@@ -265,7 +287,11 @@ api.get('/notes', (req, res) => {
 api.get('/notes/search', (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.json([]);
-  res.json(searchNotes(q, { limit: Math.min(Number(req.query.limit) || 20, 100) }));
+  res.json(searchNotes(q, {
+    category: String(req.query.category || '') || null,
+    limit: Math.max(1, Math.min(Math.floor(Number(req.query.limit)) || 20, 100)),
+    offset: Math.max(0, Math.floor(Number(req.query.offset)) || 0),
+  }));
 });
 
 api.get('/notes/:id', (req, res) => {

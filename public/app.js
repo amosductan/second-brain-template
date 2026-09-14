@@ -3,6 +3,25 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
+// Cookie authentication covers fetch, XHR uploads, and the native audio player.
+async function apiFetch(url, options) {
+  const res = await fetch(url, options);
+  if (res.status === 401) $('#auth-form').hidden = false;
+  return res;
+}
+$('#auth-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const res = await apiFetch('/api/session', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: $('#auth-token').value }),
+  });
+  if (!res.ok) { $('#auth-message').textContent = 'Incorrect access token'; return; }
+  $('#auth-token').value = '';
+  $('#auth-message').textContent = '';
+  $('#auth-form').hidden = true;
+  refreshHealth(); loadCategories(); refreshNotes(); refreshTasks(); flushOutbox();
+});
+
 // ---------- tabs ----------
 $$('.tabs button').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -46,7 +65,9 @@ function noteAssetVersion(version) {
 // ---------- health pill ----------
 async function refreshHealth() {
   try {
-    const h = await (await fetch('/api/health', { cache: 'no-store' })).json();
+    const res = await apiFetch('/api/health', { cache: 'no-store' });
+    if (!res.ok) { $('#status-pill').textContent = res.status === 401 ? 'locked' : 'unavailable'; return; }
+    const h = await res.json();
     noteAssetVersion(h.assetVersion);
     const bits = [];
     bits.push(`${h.total_notes} notes`);
@@ -455,7 +476,7 @@ function sendDiag(beacon = false) {
     if (beacon && navigator.sendBeacon) {
       navigator.sendBeacon('/api/client-log', new Blob([body], { type: 'application/json' }));
     } else {
-      fetch('/api/client-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+      apiFetch('/api/client-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
         .catch(() => {});
     }
   } catch { /* diagnostics must never break a recording */ }
@@ -486,6 +507,7 @@ function postIngest(form, onProgress) {
     const reject = done(rejectRaw);
     const xhr = new XMLHttpRequest();
     const fail = (msg, status) => {
+      if (status === 401) $('#auth-form').hidden = false;
       const err = new Error(msg);
       err.status = status;
       reject(err);
@@ -509,10 +531,10 @@ function postIngest(form, onProgress) {
 }
 
 // Worth keeping the audio and trying again later vs. a real rejection the server
-// will never accept. 0 = never got there; 408/429/5xx = the server is having a moment.
+// will never accept. Authentication can be restored, so 401/403 must keep audio too.
 function isTransientUploadError(err) {
   const s = err && err.status;
-  return s === 0 || s === undefined || s === 408 || s === 429 || s >= 500;
+  return s === 0 || s === undefined || s === 401 || s === 403 || s === 408 || s === 429 || s >= 500;
 }
 
 // Returns 'ok' | 'offline' | 'rejected'. 'offline' means the audio is safe in the
@@ -914,7 +936,7 @@ $('#file-input').addEventListener('change', async (e) => {
 $('#text-submit').addEventListener('click', async () => {
   const text = $('#text-input').value.trim();
   if (!text) return;
-  const res = await fetch('/api/ingest', {
+  const res = await apiFetch('/api/ingest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -962,7 +984,9 @@ async function watchNote(id, existingDiv) {
   const elapsed = () => `${Math.round((Date.now() - startedAt) / 1000)}s`;
   const poll = async () => {
     try {
-      const n = await (await fetch(`/api/notes/${id}`)).json();
+      const res = await apiFetch(`/api/notes/${id}`);
+      if (!res.ok) throw new Error('Note unavailable');
+      const n = await res.json();
       if (n.status === 'ready') {
         div.innerHTML = `${ic('check')}<strong>${esc(n.title || 'Note saved')}</strong>` +
           (n.category_path ? ` <span class="tag cat">${esc(n.category_path)}</span>` : '');
@@ -981,7 +1005,7 @@ async function watchNote(id, existingDiv) {
 
 window.retryNote = async (id, btn) => {
   if (btn) btn.disabled = true;
-  await fetch(`/api/notes/${id}/process`, { method: 'POST' });
+  await apiFetch(`/api/notes/${id}/process`, { method: 'POST' });
   watchNote(id);
 };
 
@@ -995,7 +1019,7 @@ $('#category-filter').addEventListener('change', refreshNotes);
 
 async function loadCategories() {
   try {
-    const { categories } = await (await fetch('/api/categories')).json();
+    const { categories } = await (await apiFetch('/api/categories')).json();
     const byId = Object.fromEntries(categories.map((c) => [c.id, c]));
     const pathOf = (c) => (c.parent_id ? `${pathOf(byId[c.parent_id])} / ${c.name}` : c.name);
     const sel = $('#category-filter');
@@ -1015,26 +1039,43 @@ async function loadCategories() {
 }
 loadCategories();
 
-async function refreshNotes() {
+let notesOffset = 0;
+let notesGeneration = 0;
+const NOTES_PAGE_SIZE = 100;
+$('#notes-more').addEventListener('click', () => refreshNotes(true));
+
+async function refreshNotes(append = false) {
+  append = append === true;
   loadCategories();
+  const generation = append ? notesGeneration : ++notesGeneration;
+  if (!append) notesOffset = 0;
+  const more = $('#notes-more');
+  more.disabled = true;
   const q = $('#search-input').value.trim();
   const cat = $('#category-filter').value;
-  let notes;
-  if (q) {
-    notes = await (await fetch(`/api/notes/search?q=${encodeURIComponent(q)}`)).json();
-    if (cat) notes = notes.filter((n) => n.category_id === cat);
-  } else {
-    notes = await (await fetch(`/api/notes${cat ? `?category=${cat}` : ''}`)).json();
+  const params = new URLSearchParams({ limit: NOTES_PAGE_SIZE, offset: notesOffset });
+  if (cat) params.set('category', cat);
+  if (q) params.set('q', q);
+  try {
+    const res = await apiFetch(`/api/notes${q ? '/search' : ''}?${params}`);
+    if (!res.ok) return;
+    const notes = await res.json();
+    if (generation !== notesGeneration) return;
+    const list = $('#notes-list');
+    if (!append) list.innerHTML = '';
+    notesOffset += notes.length;
+    more.hidden = notes.length < NOTES_PAGE_SIZE;
+    if (!notesOffset) {
+      list.innerHTML = '<div class="empty">Nothing here yet. Go say something.</div>';
+      return;
+    }
+    list.insertAdjacentHTML('beforeend', notes.map(noteCard).join(''));
+    $$('.note-card[data-id]').forEach((card) => {
+      card.onclick = () => openNote(card.dataset.id);
+    });
+  } finally {
+    if (generation === notesGeneration) more.disabled = false;
   }
-  const list = $('#notes-list');
-  if (!notes.length) {
-    list.innerHTML = '<div class="empty">Nothing here yet. Go say something.</div>';
-    return;
-  }
-  list.innerHTML = notes.map(noteCard).join('');
-  $$('.note-card[data-id]').forEach((card) => {
-    card.addEventListener('click', () => openNote(card.dataset.id));
-  });
 }
 
 function statusTag(n) {
@@ -1073,7 +1114,9 @@ async function refreshTasks() {
   const scope = cat ? `&category=${encodeURIComponent(cat)}` : '';
   let tasks;
   try {
-    ({ tasks } = await (await fetch(`/api/tasks?state=${states}${scope}`)).json());
+    const res = await apiFetch(`/api/tasks?state=${states}${scope}`);
+    if (!res.ok) { list.innerHTML = '<div class="empty">Unlock the app to view tasks.</div>'; return; }
+    ({ tasks } = await res.json());
   } catch {
     list.innerHTML = '<div class="empty">Could not reach the server.</div>';
     return;
@@ -1123,7 +1166,7 @@ function taskRow(t) {
 
 async function cycleTask(id, state) {
   const next = TASK_NEXT[state] || 'open';
-  await fetch(`/api/tasks/${id}`, {
+  await apiFetch(`/api/tasks/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state: next }),
@@ -1134,7 +1177,9 @@ async function cycleTask(id, state) {
 // ---------- note modal ----------
 let modalNoteId = null;
 async function openNote(id) {
-  const n = await (await fetch(`/api/notes/${id}`)).json();
+  const res = await apiFetch(`/api/notes/${id}`);
+  if (!res.ok) return;
+  const n = await res.json();
   modalNoteId = id;
   const date = new Date(n.created_at).toLocaleString();
   $('#note-modal-body').innerHTML = `
@@ -1155,13 +1200,13 @@ async function openNote(id) {
 $('#note-close').addEventListener('click', () => $('#note-modal').close());
 $('#note-retry').addEventListener('click', async () => {
   if (!modalNoteId) return;
-  await fetch(`/api/notes/${modalNoteId}/process`, { method: 'POST' });
+  await apiFetch(`/api/notes/${modalNoteId}/process`, { method: 'POST' });
   $('#note-modal').close();
   refreshNotes();
 });
 $('#note-delete').addEventListener('click', async () => {
   if (!modalNoteId || !confirm('Delete this note (and its audio) permanently?')) return;
-  await fetch(`/api/notes/${modalNoteId}`, { method: 'DELETE' });
+  await apiFetch(`/api/notes/${modalNoteId}`, { method: 'DELETE' });
   $('#note-modal').close();
   refreshNotes();
   refreshHealth();
@@ -1179,7 +1224,7 @@ $('#chat-form').addEventListener('submit', async (e) => {
   addChatMsg('user', text);
   const pending = addChatMsg('assistant thinking', 'searching your notes…');
   try {
-    const res = await fetch('/api/chat', {
+    const res = await apiFetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages: chatHistory }),

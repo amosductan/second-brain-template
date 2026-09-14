@@ -96,7 +96,9 @@ button: open, talk, done.
 
 To reach it away from home, the simplest private route is [Tailscale](https://tailscale.com) on the
 computer and the phone (AGENTS.md step 6). For the public internet, set `AUTH_TOKEN` and put it
-behind HTTPS.
+behind HTTPS. Enter that token in the app?s Unlock form. The browser uses an HttpOnly
+session cookie for notes, uploads, and playback; sign in again after a server restart.
+Recordings waiting for authentication stay queued on the device.
 
 **Long recordings from Voice Memos:** make an iOS Shortcut named "Send to Second Brain" with *Show in
 Share Sheet* on, accepting files, and one action: *Get Contents of URL* with URL
@@ -123,7 +125,7 @@ Every route is under `/api`. With `AUTH_TOKEN` set, send `Authorization: Bearer 
 | --- | --- |
 | `POST /api/ingest` | Multipart with an `audio` file, or JSON `{"text": "..."}`. Returns the note; processing runs in the background. |
 | `GET /api/notes` | List notes. Query: `category`, `status`, `limit`, `offset`. |
-| `GET /api/notes/search?q=` | Full-text search over transcripts, titles and summaries. |
+| `GET /api/notes/search?q=` | Full-text search over transcripts, titles and summaries. Query: `q`, `category`, `limit`, `offset`. |
 | `GET /api/notes/:id` | One note, with its full transcript. |
 | `GET /api/notes/:id/audio` | The original recording (410 once pruned; the transcript is kept). |
 | `POST /api/notes/:id/process` | Run the pipeline again, for example after adding a key. |

@@ -131,3 +131,20 @@ Every model call writes a row with the tokens the provider reported, and every t
 records the audio minutes the transcription service returned. `npm run costs` totals them. Costs
 are list-price estimates, and a call with no known price is counted as unpriced rather than as
 zero, so a partial total can't pass for a whole one.
+
+## Authentication, cleanup, and finding older notes
+
+The browser can unlock an authenticated install with its access token. An HttpOnly session
+cookie authenticates API requests, uploads, and native audio playback. A 401 or 403 leaves
+recordings queued so signing in again cannot discard them.
+
+Multipart uploads are written to `data/uploads/`. Once complete, ingest reserves the final
+path in the database before moving the file into `data/audio/`. Cleanup only examines audio,
+and rechecks references before deleting an orphan, covering uploads completed after its
+initial snapshot. Interrupted staging files are retained outside the retention sweep.
+
+Category search filters in SQL before applying the result limit. Browse and search both
+support offsets and stable tie-breaking, and the UI offers Load more for subsequent pages.
+
+`scripts/test_review_regressions.mjs` guards authentication and playback, queued audio after
+401, cleanup during an open multipart upload, category filtering, and API/UI pagination.

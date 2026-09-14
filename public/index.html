@@ -18,6 +18,12 @@
     <span id="status-pill" class="pill"></span>
   </header>
 
+  <form id="auth-form" hidden>
+    <label>Access token <input id="auth-token" type="password" autocomplete="current-password" required /></label>
+    <button class="btn primary" type="submit">Unlock</button>
+    <span id="auth-message" role="status"></span>
+  </form>
+
   <nav class="tabs">
     <button data-tab="capture" class="active">Capture</button>
     <button data-tab="notes">Notes</button>
@@ -66,6 +72,7 @@
         <select id="category-filter"><option value="">All categories</option></select>
       </div>
       <div id="notes-list" class="notes-list"></div>
+      <button id="notes-more" class="btn" hidden>Load more</button>
     </section>
 
     <!-- TASKS -->

@@ -90,6 +90,9 @@ function main() {
 
   for (const name of orphans) {
     const full = path.join(audioDir, name);
+    // A completed upload may have been published after the initial DB snapshot.
+    // Uploads reserve their DB path before moving here, so rechecking protects it.
+    if (referencedAudioPaths().some((p) => path.resolve(p).toLowerCase() === path.resolve(full).toLowerCase())) continue;
     const bytes = sizeOf(full);
     log(`orphan: ${name} (${mb(bytes)}) - no note references it`);
     if (!dryRun) fs.rmSync(full, { force: true });

@@ -18,6 +18,7 @@ const browser = process.argv.includes('--browser');
 
 const TESTS = [
   { file: 'test_retry.mjs' },
+  { file: 'test_review_regressions.mjs', args: browser ? ['--browser'] : [] },
   { file: 'test_task_items.mjs' },
   { file: 'test_llm_providers.mjs' },
   { file: 'test_transcribe_retry.mjs' },

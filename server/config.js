@@ -107,3 +107,6 @@ export const config = {
 
 export const audioDir = path.join(config.dataDir, 'audio');
 fs.mkdirSync(audioDir, { recursive: true });
+
+export const uploadDir = path.join(config.dataDir, 'uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
