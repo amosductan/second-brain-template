@@ -1,9 +1,10 @@
 /**
- * Regressions from the second review pass (2026-09-14). Every check here failed
+ * Regressions from the second review pass (2026-09-14). Checks 2-6 failed
  * against the code as published at ddfc329:
  *
- *   1. An upload the client abandons mid-body left its partial file in uploads/
- *      forever (multer never calls back, so nothing cleaned it).
+ *   1. An upload the client abandons mid-body must not leave a partial file in
+ *      uploads/. multer 2 already cleans it up; multer 1.x never called back, so
+ *      this guards against a downgrade.
  *   2. A crash between reserving a note's audio path and moving the staged file
  *      left the note pointing at nothing while the recording sat in uploads/.
  *   3. Nothing ever removed abandoned staging files.
