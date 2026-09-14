@@ -154,6 +154,13 @@ try {
       assert.equal(r.status, 200, qs);
       assert.ok((await r.json()).length >= 1, qs);
     }
+    // /notes/search clamped its own way and had no upper bound: an offset beyond
+    // int64 was bound as a REAL and SQLite answered "datatype mismatch", a 500.
+    for (const qs of ['offset=1e300', 'limit=1e300', 'offset=1.5', 'limit=0']) {
+      const r = await fetch(`${base}/api/notes/search?q=note&${qs}`, { headers });
+      assert.equal(r.status, 200, `search ${qs}`);
+      assert.ok(Array.isArray(await r.json()), `search ${qs}`);
+    }
   });
 
   await check('Load more never renders a note twice', async () => {

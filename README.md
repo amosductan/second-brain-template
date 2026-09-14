@@ -96,7 +96,7 @@ button: open, talk, done.
 
 To reach it away from home, the simplest private route is [Tailscale](https://tailscale.com) on the
 computer and the phone (AGENTS.md step 6). For the public internet, set `AUTH_TOKEN` and put it
-behind HTTPS. Enter that token in the app?s Unlock form. The browser uses an HttpOnly
+behind HTTPS. Enter that token in the app's Unlock form. The browser uses an HttpOnly
 session cookie for notes, uploads, and playback; sign in again after a server restart.
 Recordings waiting for authentication stay queued on the device.
 

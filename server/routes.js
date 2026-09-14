@@ -68,6 +68,10 @@ api.post('/session', (req, res) => {
   }
   res.cookie('sb_session', sessionToken, {
     httpOnly: true, sameSite: 'strict', path: '/api',
+    // A cookie with no lifetime dies when the browser (or a home-screen PWA)
+    // closes, so the token would be asked for again every time the app reopens.
+    // The server-side token already rotates on every restart, which bounds it.
+    maxAge: 30 * 24 * 60 * 60 * 1000,
     secure: req.secure || req.headers['x-forwarded-proto'] === 'https',
   });
   res.json({ ok: true });
@@ -318,8 +322,8 @@ api.get('/notes/search', (req, res) => {
   if (!q) return res.json([]);
   res.json(searchNotes(q, {
     category: String(req.query.category || '') || null,
-    limit: Math.max(1, Math.min(Math.floor(Number(req.query.limit)) || 20, 100)),
-    offset: Math.max(0, Math.floor(Number(req.query.offset)) || 0),
+    limit: intParam(req.query.limit, 20, 1, 100),
+    offset: intParam(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER),
   }));
 });
 
