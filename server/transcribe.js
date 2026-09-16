@@ -83,6 +83,7 @@ async function whisperFile(filePath, mime, noteId) {
     return { text: raw.trim(), seconds: null };
   });
 
+  const price = config.transcribe.pricePerMinute;
   try {
     recordUsage({
       purpose: 'transcribe',
@@ -90,8 +91,8 @@ async function whisperFile(filePath, mime, noteId) {
       model: config.transcribe.model,
       note_id: noteId,
       audio_seconds: seconds,
-      cost_usd: seconds == null ? null : (seconds / 60) * config.transcribe.pricePerMinute,
-      cost_basis: seconds == null ? 'unmeasured' : 'estimated',
+      cost_usd: seconds == null || price == null ? null : (seconds / 60) * price,
+      cost_basis: seconds == null ? 'unmeasured' : price == null ? 'unpriced' : 'estimated',
     });
   } catch (err) {
     console.error('[usage] could not record:', err.message);

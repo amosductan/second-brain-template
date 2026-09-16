@@ -20,11 +20,14 @@ const TESTS = [
   { file: 'test_retry.mjs' },
   { file: 'test_review_regressions.mjs', args: browser ? ['--browser'] : [] },
   { file: 'test_second_pass_regressions.mjs' },
+  { file: 'test_launch_regressions.mjs' },
   { file: 'test_task_items.mjs' },
   { file: 'test_llm_providers.mjs' },
   { file: 'test_transcribe_retry.mjs' },
-  { file: 'test_transcribe_chunking.mjs', needs: hasFfmpeg ? null : 'ffmpeg is not installed' },
-  { file: 'test_event_loop_free.mjs', needs: hasFfmpeg ? null : 'ffmpeg is not installed' },
+  { file: 'test_transcribe_chunking.mjs', needs: hasFfmpeg ? null : 'ffmpeg is not installed',
+    slow: 'builds and splits a two-hour recording with ffmpeg, about 3 to 5 minutes' },
+  { file: 'test_event_loop_free.mjs', needs: hasFfmpeg ? null : 'ffmpeg is not installed',
+    slow: 'splits a 40-minute recording with ffmpeg, about 1 to 2 minutes' },
   { file: 'test_recording_recovery.mjs', needs: browser ? null : 'browser test: run with --browser' },
 ];
 
@@ -48,6 +51,7 @@ for (const t of TESTS) {
     console.log(`skip  ${t.file} (${t.needs})`);
     continue;
   }
+  if (t.slow) console.log(`run   ${t.file} (${t.slow})`);
   const t0 = Date.now();
   const { code, out } = await run(t.file, t.args);
   const secs = ((Date.now() - t0) / 1000).toFixed(1);

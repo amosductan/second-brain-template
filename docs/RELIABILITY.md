@@ -64,7 +64,7 @@ deleted. `server/routes.js` (`ingestUpload`).
 atom not found").
 
 **What the code does.** iOS records fragmented MP4, where every fragment carries its own sample
-table; only the header is missing. `scripts/recover_truncated_m4a.py` rebuilds it using a healthy
+table; only the header is missing. `scripts/recover_truncated_m4a.py` (Python 3, no packages) rebuilds it using a healthy
 recording from the same device as a reference. Partial uploads are moved to
 `DATA_DIR/orphan-audio-quarantine/` rather than deleted, so this stays possible.
 
@@ -136,7 +136,7 @@ zero, so a partial total can't pass for a whole one.
 
 The browser can unlock an authenticated install with its access token. An HttpOnly session
 cookie authenticates API requests, uploads, and native audio playback. A 401 or 403 leaves
-recordings queued so signing in again cannot discard them.
+recordings queued so signing in again can't discard them.
 
 Multipart uploads are written to `data/uploads/`. Once complete, ingest reserves the final
 path in the database before moving the file into `data/audio/`. Cleanup only examines audio,

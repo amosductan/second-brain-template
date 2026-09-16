@@ -108,7 +108,9 @@ if (mode === 'anthropic') {
   Object.assign(process.env, { LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'test-key', LLM_BASE_URL: `${base}/v1` });
   if (mode === 'openai-priced') Object.assign(process.env, { LLM_PRICE_IN: '1', LLM_PRICE_OUT: '4' });
 } else if (mode === 'transcribe') {
-  Object.assign(process.env, { LLM_PROVIDER: '', TRANSCRIBE_API_KEY: 'test-key', TRANSCRIBE_BASE_URL: `${base}/v1` });
+  // A non-OpenAI endpoint is unpriced unless you say what it costs; this suite
+  // says so, and checks the unpriced case separately below.
+  Object.assign(process.env, { LLM_PROVIDER: '', TRANSCRIBE_API_KEY: 'test-key', TRANSCRIBE_BASE_URL: `${base}/v1`, TRANSCRIBE_PRICE_PER_MIN: '0.006' });
 }
 
 const { insertNote, getNote, usageSummary, listTasks, closeDb } = await import('../server/db.js');
@@ -116,6 +118,7 @@ console.log(`\n[${mode}]`);
 
 if (mode === 'transcribe') {
   const { transcribeAudio } = await import('../server/transcribe.js');
+  const config_test = await import('../server/config.js');
   const clip = path.join(dataDir, 'clip.m4a');
   fs.writeFileSync(clip, Buffer.alloc(2048));
   const text = await transcribeAudio(clip, 'audio/mp4', 'note-1');
@@ -125,6 +128,12 @@ if (mode === 'transcribe') {
   check('asks for verbose_json (it carries the duration)', () => assert.ok(req && req.headers['content-type'].includes('multipart')));
   check('logs 90 audio seconds', () => assert.equal(u.total.audio_seconds, 90));
   check('prices 1.5 minutes at $0.006/min', () => assert.equal(u.total.cost_usd.toFixed(4), '0.0090'));
+  check("a non-OpenAI endpoint with no price set is logged unpriced, never at OpenAI's rate", () => {
+    const { transcribePrice } = config_test;
+    assert.equal(transcribePrice({ TRANSCRIBE_BASE_URL: 'http://localhost:8000/v1' }), null);
+    assert.equal(transcribePrice({}), 0.006);
+    assert.equal(transcribePrice({ TRANSCRIBE_BASE_URL: 'http://localhost:8000/v1', TRANSCRIBE_PRICE_PER_MIN: '0.002' }), 0.002);
+  });
 } else {
   const { categorizeNote } = await import('../server/agents/categorizer.js');
   const { chat } = await import('../server/agents/chat.js');

@@ -220,9 +220,9 @@ function renderRecordTime() {
   // record button is the same lie as a running timer.
   recordBtn.classList.toggle('recording', isRecording() && !captureStalled());
   if (captureStalled()) {
-    recordTime.textContent = `${fmt(total)} recorded — paused`;
+    recordTime.textContent = `${fmt(total)} recorded, paused`;
   } else {
-    recordTime.textContent = `${fmt(total)}${segmentIndex > 1 ? ` (part ${segmentIndex})` : ''} — tap to stop`;
+    recordTime.textContent = `${fmt(total)}${segmentIndex > 1 ? ` (part ${segmentIndex})` : ''}, tap to stop`;
   }
 }
 
@@ -235,17 +235,17 @@ function setRecordHint() {
   if (captureStalled() || !isRecording()) {
     recordHint.textContent = resuming
       ? 'Picking the recording back up…'
-      : 'iOS cut the microphone off while the app was in the background. Everything up to that point is saved — tap to carry on.';
+      : 'iOS cut the microphone off while the app was in the background. Everything up to that point is saved. Tap to carry on.';
     return;
   }
   if (wakeLock) {
     recordHint.textContent = chunkPersistFailed
-      ? 'Screen will stay on. Keep the app open — audio is not being backed up on this device.'
-      : 'Screen stays on. Leaving the app stops the mic — it picks back up when you return.';
+      ? 'Screen will stay on. Keep the app open: audio isn\'t being backed up on this device.'
+      : 'Screen stays on. Leaving the app stops the mic. It picks back up when you return.';
   } else {
     recordHint.textContent = chunkPersistFailed
-      ? "Screen may switch off (Low Power Mode?) and audio is not being backed up — keep the screen on."
-      : "Screen may switch off (Low Power Mode?) — audio is saved every few seconds, so anything captured is kept.";
+      ? "Screen may switch off (Low Power Mode?) and audio isn't being backed up. Keep the screen on."
+      : "Screen may switch off (Low Power Mode?). Audio is saved every few seconds, so anything captured is kept.";
   }
 }
 
@@ -373,7 +373,7 @@ async function startSegment() {
       }
       const label = part > 1 ? `part ${part} (${fmt(capturedMs)})` : filename;
       if (blob.size > 0) await uploadAudio(blob, filename, 'live');
-      else feedItem('').innerHTML = `${ic('alert')}${esc(label)} captured no audio — nothing to upload`;
+      else feedItem('').innerHTML = `${ic('alert')}${esc(label)} captured no audio, nothing to upload`;
       // Only now is the durable copy redundant: uploadAudio has either got a note
       // id back, parked the blob in the outbox, or hit a terminal reject. Deleting
       // it any earlier would leave the upload itself unprotected.
@@ -443,7 +443,7 @@ async function maybeResume(fromTap = false) {
     if (!started) {
       // Safari can refuse getUserMedia without a fresh gesture. Say so and let
       // the button be the gesture, rather than silently ending the session.
-      recordTime.textContent = `${fmt(sessionCapturedMs)} recorded — tap to carry on`;
+      recordTime.textContent = `${fmt(sessionCapturedMs)} recorded. Tap to carry on`;
     }
   } finally {
     resuming = false;
@@ -523,8 +523,8 @@ function postIngest(form, onProgress) {
       else fail((data && data.error) || `${xhr.status} ${xhr.statusText || 'upload failed'}`, xhr.status);
     });
     // status 0 = the request never reached the server (offline, DNS, TLS, tailnet blocked).
-    xhr.addEventListener('error', () => fail('network error — check the connection', 0));
-    xhr.addEventListener('abort', () => fail('upload cancelled', 0));
+    xhr.addEventListener('error', () => fail('network error, check the connection', 0));
+    xhr.addEventListener('abort', () => fail('upload canceled', 0));
     xhr.addEventListener('timeout', () => fail('upload timed out', 0));
     xhr.send(form);
   });
@@ -553,18 +553,18 @@ async function uploadAudio(blobOrFile, filename, source, existingDiv, opts = {})
   try {
     const note = await postIngest(form, (frac, loaded, total) => {
       if (frac === null) {
-        setLine(`Uploading "${filename}" — ${mb(loaded)} sent…`);
+        setLine(`Uploading "${filename}": ${mb(loaded)} sent…`);
       } else if (frac >= 1) {
-        setLine(`Uploaded ${mb(total)} — server is receiving it…`);
-        setRecordStatus('uploaded — processing');
+        setLine(`Uploaded ${mb(total)}, server is receiving it…`);
+        setRecordStatus('uploaded, processing');
       } else {
-        setLine(`Uploading "${filename}" — ${Math.round(frac * 100)}% of ${mb(total)}`);
+        setLine(`Uploading "${filename}": ${Math.round(frac * 100)}% of ${mb(total)}`);
         setRecordStatus(`uploading ${Math.round(frac * 100)}%`);
       }
     });
     // Only drop the offline copy once the server has confirmed a note id.
     if (opts.outboxId != null) await outboxRemove(opts.outboxId);
-    setLine(`Saved — processing "${filename}"`);
+    setLine(`Saved. Processing "${filename}"`);
     watchNote(note.id, div);
     refreshHealth();
     return 'ok';
@@ -576,19 +576,19 @@ async function uploadAudio(blobOrFile, filename, source, existingDiv, opts = {})
       return 'rejected';
     }
     if (opts.outboxId != null) {
-      setHtml(`${ic('cloud-off')}Still offline — "${esc(filename)}" is saved and waiting`);
+      setHtml(`${ic('cloud-off')}Still offline. "${esc(filename)}" is saved and waiting`);
       return 'offline';
     }
     try {
       const id = await outboxAdd({ blob: blobOrFile, filename, source, created_at: Date.now() });
       outboxLines.set(id, div);
-      setHtml(`${ic('cloud-off')}Saved offline — "${esc(filename)}" will upload when you're back online`);
+      setHtml(`${ic('cloud-off')}Saved offline. "${esc(filename)}" will upload when you're back online`);
       // Reflect the queue immediately — waiting for the next timer tick reads as nothing happened.
       outboxList().then((all) => setOutboxBanner(all.length)).catch(() => {});
       scheduleOutboxFlush();
       return 'offline';
     } catch (storeErr) {
-      setHtml(`${ic('alert')}Upload failed and could not be saved offline: ${esc(err.message)}`);
+      setHtml(`${ic('alert')}Upload failed and couldn't be saved offline: ${esc(err.message)}`);
       return 'rejected';
     }
   }
@@ -807,7 +807,7 @@ async function recoverChunkSessions() {
         const secs = Math.max(1, parts.length * Math.round(CHUNK_FLUSH_MS / 1000));
         outboxLines.set(outboxId, feedItem(''));
         outboxLines.get(outboxId).innerHTML =
-          `${ic('archive')}Recovered a recording that was interrupted — ` +
+          `${ic('archive')}Recovered a recording that was interrupted, ` +
           `about ${secs < 60 ? `${secs}s` : `${Math.round(secs / 60)} min`} of audio, uploading now`;
         recovered++;
       } catch {
@@ -837,7 +837,7 @@ function setOutboxBanner(count, dead = 0) {
   if (!el) return;
   el.hidden = count === 0 && dead === 0;
   if (count) {
-    el.innerHTML = `${ic('cloud-off')}${count} recording${count === 1 ? '' : 's'} saved offline — ` +
+    el.innerHTML = `${ic('cloud-off')}${count} recording${count === 1 ? '' : 's'} saved offline, ` +
       `retrying automatically <button class="btn" id="outbox-retry">Retry now</button>`;
     $('#outbox-retry').addEventListener('click', (e) => {
       e.target.disabled = true;
@@ -846,8 +846,8 @@ function setOutboxBanner(count, dead = 0) {
   } else if (dead) {
     // Never claim to be retrying something that can't succeed — that was the
     // whole reason a dead upload looked like a broken button for hours.
-    el.innerHTML = `${ic('alert')}${dead} recording${dead === 1 ? '' : 's'} could not be uploaded — ` +
-      `the audio is no longer readable on this device. ` +
+    el.innerHTML = `${ic('alert')}${dead} recording${dead === 1 ? '' : 's'} couldn't be uploaded. ` +
+      `The audio is no longer readable on this device. ` +
       `<button class="btn" id="outbox-clear">Dismiss</button>`;
     $('#outbox-clear').addEventListener('click', async (e) => {
       e.target.disabled = true;
@@ -882,8 +882,8 @@ async function flushOutbox() {
       // not silently disappear — but it stops being retried.
       if (!(await blobIsReadable(item.blob))) {
         try { await outboxPut({ ...item, dead: true }); } catch {}
-        div.innerHTML = `${ic('alert')}"${esc(item.filename)}" can't be uploaded — ` +
-          `the audio is no longer readable on this device, so it won't be retried.`;
+        div.innerHTML = `${ic('alert')}"${esc(item.filename)}" can't be uploaded. ` +
+          `The audio is no longer readable on this device, so it won't be retried.`;
         outboxLines.delete(item.id);
         continue;
       }
@@ -919,37 +919,60 @@ $('#file-input').addEventListener('change', async (e) => {
   for (let i = files.length - 1; i >= 0; i--) {
     lines[i] = feedItem(i === 0
       ? `Uploading "${files[i].name}"…`
-      : `Queued "${files[i].name}" (${mb(files[i].size)}) — ${i} ahead of it`);
+      : `Queued "${files[i].name}" (${mb(files[i].size)}), ${i} ahead of it`);
   }
   for (let i = 0; i < files.length; i++) {
     await uploadAudio(files[i], files[i].name, 'upload', lines[i]);
     for (let j = i + 1; j < files.length; j++) {
       const ahead = j - i - 1;
       lines[j].textContent = ahead
-        ? `Queued "${files[j].name}" (${mb(files[j].size)}) — ${ahead} ahead of it`
-        : `Queued "${files[j].name}" (${mb(files[j].size)}) — next up`;
+        ? `Queued "${files[j].name}" (${mb(files[j].size)}), ${ahead} ahead of it`
+        : `Queued "${files[j].name}" (${mb(files[j].size)}), next up`;
     }
   }
 });
 
 // ---------- text ingest ----------
-$('#text-submit').addEventListener('click', async () => {
+$('#text-submit').addEventListener('click', async (e) => {
   const text = $('#text-input').value.trim();
   if (!text) return;
-  const res = await apiFetch('/api/ingest', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text }),
-  });
-  if (res.ok) {
-    const note = await res.json();
-    $('#text-input').value = '';
-    watchNote(note.id, feedItem('Saved — processing text note'));
-    refreshHealth();
-  } else {
-    feedItem('').innerHTML = `${ic('alert')}Could not save note`;
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    const res = await apiFetch('/api/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (res.ok) {
+      const note = await res.json();
+      $('#text-input').value = '';
+      watchNote(note.id, feedItem('Saved. Processing text note'));
+      refreshHealth();
+    } else {
+      feedItem('').innerHTML = `${ic('alert')}Couldn't save note: ${esc(await errorText(res))}`;
+    }
+  } catch (err) {
+    feedItem('').innerHTML = `${ic('alert')}Couldn't save note: ${esc(err.message)}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save note';
   }
 });
+
+// The server's error message when there is one, else the status.
+async function errorText(res) {
+  try { return (await res.json()).error || `${res.status}`; } catch { return `${res.status}`; }
+}
+
+// A short message in the status pill, then back to the health line. For the
+// actions that used to fail silently (a 401 or a dropped connection left the
+// row exactly as it was, which reads as a button that does nothing).
+function flash(msg) {
+  $('#status-pill').textContent = msg;
+  setTimeout(refreshHealth, 4000);
+}
 
 // ---------- capture feed + note watching ----------
 function feedItem(text) {
@@ -1005,7 +1028,12 @@ async function watchNote(id, existingDiv) {
 
 window.retryNote = async (id, btn) => {
   if (btn) btn.disabled = true;
-  await apiFetch(`/api/notes/${id}/process`, { method: 'POST' });
+  const res = await apiFetch(`/api/notes/${id}/process`, { method: 'POST' }).catch(() => null);
+  if (!res || !res.ok) {
+    if (btn) btn.disabled = false;
+    flash(res ? `Retry failed: ${await errorText(res)}` : 'Retry failed: no connection');
+    return;
+  }
   watchNote(id);
 };
 
@@ -1090,7 +1118,7 @@ function statusTag(n) {
 }
 
 function noteCard(n) {
-  const date = new Date(n.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const date = fmtDate(n.created_at);
   const preview = n.summary || (n.transcript ? n.transcript.slice(0, 160) + (n.transcript.length > 160 ? '…' : '') : '');
   return `<div class="note-card" data-id="${n.id}">
     <div class="title">${esc(n.title || 'Untitled note')}</div>
@@ -1123,7 +1151,7 @@ async function refreshTasks() {
     if (!res.ok) { list.innerHTML = '<div class="empty">Unlock the app to view tasks.</div>'; return; }
     ({ tasks } = await res.json());
   } catch {
-    list.innerHTML = '<div class="empty">Could not reach the server.</div>';
+    list.innerHTML = '<div class="empty">Couldn\'t reach the server.</div>';
     return;
   }
   if (!tasks.length) {
@@ -1171,32 +1199,38 @@ function taskRow(t) {
 
 async function cycleTask(id, state) {
   const next = TASK_NEXT[state] || 'open';
-  await apiFetch(`/api/tasks/${id}`, {
+  const res = await apiFetch(`/api/tasks/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state: next }),
-  });
+  }).catch(() => null);
+  if (!res || !res.ok) flash(res ? `Couldn't update the task: ${await errorText(res)}` : "Couldn't update the task: no connection");
   refreshTasks();
 }
+
+const SOURCE_LABEL = { live: 'Recorded', upload: 'Uploaded', text: 'Typed' };
+const fmtDate = (iso) => new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 // ---------- note modal ----------
 let modalNoteId = null;
 async function openNote(id) {
-  const res = await apiFetch(`/api/notes/${id}`);
-  if (!res.ok) return;
+  const res = await apiFetch(`/api/notes/${id}`).catch(() => null);
+  if (!res || !res.ok) { flash(res ? `Couldn't open the note: ${await errorText(res)}` : "Couldn't open the note: no connection"); return; }
   const n = await res.json();
   modalNoteId = id;
-  const date = new Date(n.created_at).toLocaleString();
+  const meta = [fmtDate(n.created_at), SOURCE_LABEL[n.source] || n.source];
+  if (n.status !== 'ready') meta.push(n.status);
+  if (n.category_path) meta.push(n.category_path);
   $('#note-modal-body').innerHTML = `
     <h2>${esc(n.title || 'Untitled note')}</h2>
-    <div class="meta">${esc(date)} · ${esc(n.source)} · ${esc(n.status)}${n.category_path ? ' · ' + esc(n.category_path) : ''}</div>
+    <div class="meta">${meta.map(esc).join(' · ')}</div>
     ${n.summary ? `<p>${esc(n.summary)}</p>` : ''}
     ${n.action_items?.length ? `<h4 style="margin-top:12px">Action items</h4><ul>${n.action_items.map((a) => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
     ${n.error ? `<p style="color:var(--danger);margin-top:10px">${ic('alert')}${esc(n.error)}</p>` : ''}
     ${n.audio_path
       ? `<audio controls src="/api/notes/${n.id}/audio"></audio>`
       : n.audio_pruned_at
-        ? `<p class="muted" style="margin-top:10px">${ic('archive')}Audio pruned ${esc(n.audio_pruned_at.slice(0, 10))} to save space — the transcript below is the record.</p>`
+        ? `<p class="muted" style="margin-top:10px">${ic('archive')}Audio pruned ${esc(n.audio_pruned_at.slice(0, 10))} to save space. The transcript below is the record.</p>`
         : ''}
     ${n.transcript ? `<div class="transcript">${esc(n.transcript)}</div>` : ''}
   `;
@@ -1205,13 +1239,15 @@ async function openNote(id) {
 $('#note-close').addEventListener('click', () => $('#note-modal').close());
 $('#note-retry').addEventListener('click', async () => {
   if (!modalNoteId) return;
-  await apiFetch(`/api/notes/${modalNoteId}/process`, { method: 'POST' });
+  const res = await apiFetch(`/api/notes/${modalNoteId}/process`, { method: 'POST' }).catch(() => null);
+  if (!res || !res.ok) flash(res ? `Retry failed: ${await errorText(res)}` : 'Retry failed: no connection');
   $('#note-modal').close();
   refreshNotes();
 });
 $('#note-delete').addEventListener('click', async () => {
   if (!modalNoteId || !confirm('Delete this note (and its audio) permanently?')) return;
-  await apiFetch(`/api/notes/${modalNoteId}`, { method: 'DELETE' });
+  const res = await apiFetch(`/api/notes/${modalNoteId}`, { method: 'DELETE' }).catch(() => null);
+  if (!res || !res.ok) flash(res ? `Couldn't delete: ${await errorText(res)}` : "Couldn't delete: no connection");
   $('#note-modal').close();
   refreshNotes();
   refreshHealth();

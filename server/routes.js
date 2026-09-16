@@ -18,7 +18,7 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: uploadDir,
     filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname || '') || guessExt(file.mimetype);
+      const ext = safeExt(file.originalname, file.mimetype);
       const name = `${Date.now()}-${crypto.randomUUID()}${ext}`;
       // Remembered so an upload the client abandons mid-body can be cleaned up:
       // multer never calls back in that case, so req.file is never set.
@@ -41,6 +41,29 @@ async function fileExists(p) {
   }
 }
 
+// What we store and serve is always an audio type: the client's declared type
+// and filename are hints, never trusted. Serving an upload back with a
+// client-chosen Content-Type (text/html) would let anyone who can ingest plant
+// a page on this origin, where the session cookie is valid.
+const AUDIO_EXTS = new Set(['.m4a', '.mp4', '.mp3', '.mpga', '.mpeg', '.wav', '.webm', '.ogg', '.oga',
+  '.opus', '.aac', '.flac', '.caf', '.aiff', '.aif', '.amr', '.3gp', '.wma']);
+const MIME_BY_EXT = {
+  '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.aac': 'audio/aac', '.mp3': 'audio/mpeg', '.mpga': 'audio/mpeg',
+  '.mpeg': 'audio/mpeg', '.wav': 'audio/wav', '.webm': 'audio/webm', '.ogg': 'audio/ogg', '.oga': 'audio/ogg',
+  '.opus': 'audio/ogg', '.flac': 'audio/flac', '.caf': 'audio/x-caf', '.aiff': 'audio/aiff', '.aif': 'audio/aiff',
+  '.amr': 'audio/amr', '.3gp': 'audio/3gpp', '.wma': 'audio/x-ms-wma',
+};
+export function safeAudioMime(mime = '', filename = '') {
+  const m = String(mime).toLowerCase().split(';')[0].trim();
+  if (/^(audio\/[\w.+-]+|video\/(mp4|webm|ogg|quicktime))$/.test(m)) return m;
+  // iOS Shortcuts and curl send application/octet-stream; the extension is the better hint.
+  return MIME_BY_EXT[path.extname(filename || '').toLowerCase()] || 'application/octet-stream';
+}
+function safeExt(originalName, mime) {
+  const ext = path.extname(originalName || '').toLowerCase();
+  return AUDIO_EXTS.has(ext) ? ext : guessExt(mime);
+}
+
 function guessExt(mime = '') {
   if (mime.includes('mp4') || mime.includes('m4a') || mime.includes('aac')) return '.m4a';
   if (mime.includes('mpeg') || mime.includes('mp3')) return '.mp3';
@@ -51,6 +74,16 @@ function guessExt(mime = '') {
 }
 
 export const api = express.Router();
+
+// Every error is answered as JSON. Express's default handler returns an HTML
+// stack trace, which names absolute paths on this machine to whoever asked.
+// eslint-disable-next-line no-unused-vars
+export function errorHandler(err, req, res, next) {
+  if (res.headersSent) return next(err);
+  const status = Number(err.status || err.statusCode) || 500;
+  if (status >= 500) console.error(`[http] ${req.method} ${req.originalUrl}:`, err.stack || err.message);
+  res.status(status).json({ error: status >= 500 ? 'Internal server error' : err.message });
+}
 
 // Constant-time secret comparison: a plain === leaks how many leading characters
 // matched. Different lengths return false without throwing.
@@ -76,6 +109,11 @@ api.post('/session', (req, res) => {
   });
   res.json({ ok: true });
 });
+
+// Liveness only, and deliberately above the auth gate: Docker's HEALTHCHECK and
+// a service manager have no token, and a container whose health probe 401s is
+// "unhealthy" forever. Everything informative stays on /api/health, behind auth.
+api.get('/ping', (_req, res) => res.json({ ok: true }));
 
 // Optional bearer-token auth for all API routes (set AUTH_TOKEN in .env).
 api.use((req, res, next) => {
@@ -252,6 +290,12 @@ function ingestUpload(req, res, next) {
     //
     // Matched on the header string, not the parsed number: a chunked body sends
     // no Content-Length at all, which parses to 0 and would be misread as empty.
+    // multer's own errors (wrong field name, over the size limit, too many
+    // parts) are about the request's shape, and the same request would fail
+    // the same way forever. 4xx, so a mis-built iOS Shortcut stops retrying.
+    if (err instanceof multer.MulterError) {
+      return res.status(400).json({ error: `Upload rejected: ${err.message} (send the file in a field named "audio")` });
+    }
     if (lengthHeader === '0') {
       return res.status(400).json({
         error: 'Upload contained no audio (empty body) — the recording is no longer readable on this device, so it will not be retried.',
@@ -284,7 +328,7 @@ api.post('/ingest', ingestUpload, async (req, res) => {
     note = insertNote({
       source: req.body?.source === 'live' ? 'live' : 'upload',
       audioPath: finalPath,
-      audioMime: req.file.mimetype,
+      audioMime: safeAudioMime(req.file.mimetype, req.file.originalname),
       audioOriginalName: req.file.originalname || null,
     });
     // Reserve the final path in the DB before publishing the file to cleanup's directory.
@@ -310,8 +354,8 @@ const intParam = (v, fallback, min, max) => Math.max(min, Math.min(Math.floor(Nu
 
 api.get('/notes', (req, res) => {
   res.json(listNotes({
-    category: req.query.category || null,
-    status: req.query.status || null,
+    category: String(req.query.category || '') || null,
+    status: String(req.query.status || '') || null,
     limit: intParam(req.query.limit, 100, 1, 500),
     offset: intParam(req.query.offset, 0, 0, Number.MAX_SAFE_INTEGER),
   }));
@@ -350,7 +394,9 @@ api.get('/notes/:id/audio', async (req, res) => {
   // expects a 206), and an unhandled read-stream error (file pruned between the
   // check and the read) would crash the whole process. dotfiles:'allow' because
   // DATA_DIR may legitimately live under a dot-folder.
-  res.type(note.audio_mime || 'application/octet-stream');
+  res.type(safeAudioMime(note.audio_mime, note.audio_path));
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Disposition', `inline; filename="note-${note.id}${path.extname(note.audio_path) || ''}"`);
   res.sendFile(path.resolve(note.audio_path), { dotfiles: 'allow' }, (err) => {
     if (err && !res.headersSent) res.status(404).json({ error: 'No audio for this note' });
   });

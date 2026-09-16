@@ -1,7 +1,7 @@
 import express from 'express';
-import { config } from './config.js';
+import { config, fromShell } from './config.js';
 import { closeDb } from './db.js';
-import { api } from './routes.js';
+import { api, errorHandler } from './routes.js';
 import { resumePending } from './jobs.js';
 import { transcriptionAvailable } from './transcribe.js';
 import { llmDescription } from './llm.js';
@@ -11,13 +11,15 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use('/api', api);
 app.use(express.static(config.publicDir));
+app.use(errorHandler);
 
 const host = process.env.HOST || '127.0.0.1';
 const server = app.listen(config.port, host, () => {
   console.log(`Second Brain running at http://${host === '0.0.0.0' ? 'localhost' : host}:${config.port}`);
-  console.log(`  data dir:       ${config.dataDir}`);
-  console.log(`  transcription:  ${transcriptionAvailable() ? 'on (' + config.transcribe.model + ')' : 'OFF (set OPENAI_API_KEY or TRANSCRIBE_API_KEY)'}`);
-  console.log(`  model:          ${llmDescription() === 'off' ? 'OFF (set a provider in .env)' : llmDescription()}`);
+  const shell = (...names) => (names.some(fromShell) ? '  (from your shell environment, not .env)' : '');
+  console.log(`  data dir:       ${config.dataDir}${shell('DATA_DIR')}`);
+  console.log(`  transcription:  ${transcriptionAvailable() ? 'on (' + config.transcribe.model + ')' : 'OFF (set OPENAI_API_KEY or TRANSCRIBE_API_KEY)'}${shell('TRANSCRIBE_API_KEY', 'OPENAI_API_KEY')}`);
+  console.log(`  model:          ${llmDescription() === 'off' ? 'OFF (set a provider in .env)' : llmDescription()}${shell('LLM_PROVIDER', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY')}`);
   console.log(`  auth:           ${config.authToken ? 'bearer token required' : 'open (set AUTH_TOKEN before exposing it beyond this machine)'}`);
   resumePending().catch((err) => console.error('[jobs] resume failed:', err.message));
 });

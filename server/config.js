@@ -6,12 +6,21 @@ const repoRoot = path.resolve(import.meta.dirname, '..');
 // Minimal .env loader so we don't need a dotenv dependency. A real environment
 // variable always wins over the file.
 const envPath = path.join(repoRoot, '.env');
+const fromFile = new Set();
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    if (m && !(m[1] in process.env)) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+      fromFile.add(m[1]);
+    }
   }
 }
+
+// True when a non-empty value came from the shell or service manager rather
+// than .env. A stray OPENAI_API_KEY or DATA_DIR in someone's environment is
+// used (and billed) silently otherwise; the startup banner names it.
+export const fromShell = (name) => !fromFile.has(name) && (process.env[name] ?? '').trim() !== '';
 
 const env = (name, fallback = '') => (process.env[name] ?? '').trim() || fallback;
 
@@ -61,6 +70,14 @@ const llmKey = {
 
 const resolvedDataDir = path.resolve(repoRoot, env('DATA_DIR', 'data'));
 
+export function transcribePrice(source = null) {
+  const get = (k, d = '') => (source ? (source[k] ?? d) : env(k, d));
+  const set = get('TRANSCRIBE_PRICE_PER_MIN');
+  if (set !== '' && set != null) return Number(set) >= 0 ? Number(set) : null;
+  const base = get('TRANSCRIBE_BASE_URL', 'https://api.openai.com/v1');
+  return /^https:\/\/api\.openai\.com\b/.test(base) ? 0.006 : null;
+}
+
 export const config = {
   port: Number(env('PORT', '3000')),
   dataDir: resolvedDataDir,
@@ -84,8 +101,11 @@ export const config = {
     apiKey: env('TRANSCRIBE_API_KEY', env('OPENAI_API_KEY')),
     baseUrl: env('TRANSCRIBE_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, ''),
     model: env('TRANSCRIBE_MODEL', 'whisper-1'),
-    // USD per audio minute, for the usage ledger. whisper-1 lists at $0.006.
-    pricePerMinute: Number(env('TRANSCRIBE_PRICE_PER_MIN', '0.006')),
+    // USD per audio minute, for the usage ledger. whisper-1 lists at $0.006, so
+    // that is the default only when the endpoint is OpenAI's. Anything else
+    // (Groq, a local Whisper) is unpriced until you set it: a free server logged
+    // at OpenAI's price would be a wrong number that looks measured.
+    pricePerMinute: transcribePrice(),
   },
 
   authToken: env('AUTH_TOKEN'),

@@ -8,10 +8,11 @@ reachable from their phone).
 
 ## Setup script ("set up my second brain")
 
-1. **Check the machine.** `node --version` must be 22.5 or newer (the app uses Node's built-in
-   SQLite). Run `npm install`, then `npm test`: it must end with `0 failed`. Skipped tests are fine
+1. **Check the machine.** `node --version` must be 22.13 or newer (the app uses Node's built-in
+   SQLite). Run `npm install`, then `npm test`: it must end with `0 failed`. With ffmpeg
+   installed the suite takes a few minutes; the runner says which test it's on. Skipped tests are fine
    and say why (ffmpeg missing, browser test not requested). If ffmpeg isn't installed, install it
-   (`brew install ffmpeg`, `sudo apt install ffmpeg`, `winget install ffmpeg`): without it,
+   (`brew install ffmpeg`, `sudo apt install ffmpeg`, `winget install Gyan.FFmpeg`): without it,
    recordings over about 25 minutes can't be transcribed.
 2. **Pick the providers.** Ask, in one message:
    - which model provider should file notes and answer questions: Anthropic, OpenAI, Gemini, or a

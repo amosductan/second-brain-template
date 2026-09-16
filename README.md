@@ -49,18 +49,18 @@ reported. `npm run costs` shows the total, per note and per model.
 For scale: the original app, used heavily for a month (249 notes, about 2,070 minutes of audio), was
 reconstructed from its own record at about $30, or roughly $0.12 a note. Transcription was the
 largest single piece ($12.42), and filing notes with an Opus-class model was $11.58. That estimate
-excludes chat which has been used minimally in the original app
+excludes chat, which the original app has used very little.
 
-A cheaper model cuts the filing cost even more. Set `CATEGORIZER_MODEL` in `.env` and compare with
+A cheaper model cuts the filing cost further. Set `CATEGORIZER_MODEL` in `.env` and compare with
 `npm run costs`.
 
 ## Set it up
 
-You need Node.js 22.5 or newer (the database is Node's built-in SQLite), ffmpeg for recordings over
-about 25 minutes, and API keys for the providers you choose.
+You need Node.js 22.13 or newer (the database is Node's built-in SQLite; 24 is what it's tested
+on), ffmpeg for recordings over about 25 minutes, and API keys for the providers you choose.
 
 ```bash
-git clone <this repo>
+git clone https://github.com/amosductan/second-brain-template.git
 cd second-brain-template
 npm install
 cp .env.example .env     # pick a provider and add its key
@@ -87,7 +87,7 @@ lives in `./data`.
 
 Set `CATEGORIZER_MODEL` and `CHAT_MODEL` to use others, and `LLM_BASE_URL` to point the OpenAI-style
 providers at any compatible server. Transcription uses `OPENAI_API_KEY` unless you set
-`TRANSCRIBE_API_KEY` and `TRANSCRIBE_BASE_URL`.
+`TRANSCRIBE_API_KEY` and `TRANSCRIBE_BASE_URL`. A variable already set in your shell wins over `.env`.
 
 ## On your phone
 
@@ -135,7 +135,10 @@ Every route is under `/api`. With `AUTH_TOKEN` set, send `Authorization: Bearer 
 | `GET /api/categories` | The taxonomy, as a list and as a tree. |
 | `POST /api/chat` | JSON `{"messages": [{"role": "user", "content": "..."}]}` returns `{"reply": "..."}`. |
 | `GET /api/usage?days=30` | Model and transcription usage and estimated cost. |
+| `POST /api/session` | JSON `{"token": "..."}`. Sets the HttpOnly session cookie the browser UI uses; this is what the Unlock form calls. |
+| `POST /api/client-log` | JSON `{"events": [...], "ua": "..."}`, the app's own event trail, appended to `data/client-log.jsonl`. |
 | `GET /api/health` | Note counts, what's configured, and the front-end version. |
+| `GET /api/ping` | `{"ok": true}` with no token, for Docker and service-manager health probes. |
 
 ## Keeping it safe
 
@@ -145,6 +148,8 @@ Every route is under `/api`. With `AUTH_TOKEN` set, send `Authorization: Bearer 
 - **Disk:** `node scripts/prune_audio.mjs` deletes audio older than `AUDIO_RETENTION_DAYS` (default
   180) and keeps every transcript.
 - **Tests:** `npm test` runs everything offline against local stubs, so it never calls a paid API.
+  With ffmpeg installed it takes a few minutes, because two tests build and split a real two-hour
+  recording.
 
 ## Privacy
 
