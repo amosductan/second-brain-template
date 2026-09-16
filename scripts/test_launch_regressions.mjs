@@ -106,6 +106,25 @@ try {
     assert.ok(!text.includes(path.sep + 'server' + path.sep), `leaked a path: ${text}`);
   });
 
+  await check('task filters accept repeated parameters and clamp negative limits', async () => {
+    const note = db.insertNote({ source: 'text', transcript: 'task filter fixture' });
+    db.updateNote(note.id, { category_id: db.findCategoryByPath('Work').id, action_items: ['first', 'second', 'third'] });
+    try {
+      const repeated = await fetch(base + '/api/tasks?category=Work&category=Ideas', { headers });
+      assert.equal(repeated.status, 200);
+      const limited = await fetch(base + '/api/tasks?limit=-1', { headers });
+      assert.equal(limited.status, 200);
+      assert.equal((await limited.json()).tasks.length, 1);
+      const task = db.listTasks().find((t) => t.note_id === note.id);
+      const invalid = await fetch(`${base}/api/tasks/${task.id}`, {
+        method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ note: { unexpected: true } }),
+      });
+      assert.equal(invalid.status, 400);
+      assert.equal(db.getTask(task.id).note, null);
+    } finally { db.deleteNote(note.id); }
+  });
+
   if (failures.length) {
     console.log(`\n${failures.length} FAILED, ${passed} passed`);
     process.exitCode = 1;

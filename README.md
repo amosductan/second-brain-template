@@ -30,9 +30,11 @@ categorize      a model titles, summarizes, tags and files the note, pulls out a
 search + chat   full-text search over every note; a chat agent that searches before it answers
 ```
 
-- **Capture is the hard part, so it's built to not lose audio.** Recording survives the screen
-  turning off and the app being backgrounded, a failed upload waits on the phone and retries, and
-  a truncated upload can be rebuilt. [docs/RELIABILITY.md](docs/RELIABILITY.md) has the real
+- **Capture includes recovery safeguards.** Audio chunks are saved on the device during recording,
+  and failed uploads are queued for retry. Phone browsers can suspend recording when the screen
+  locks or the app goes into the background; keep it open for uninterrupted capture, or upload
+  a Voice Memos recording. Saved chunks and some truncated uploads can be recovered.
+  [docs/RELIABILITY.md](docs/RELIABILITY.md) has the real
   failures behind each of these.
 - **The taxonomy is yours.** It starts with five categories. The model proposes new ones as your
   notes need them, and you can add your own filing rules in plain words.
@@ -68,6 +70,9 @@ npm run check            # one short call to prove it answers
 npm run demo             # optional: a few weeks of example notes
 npm start                # http://127.0.0.1:3000
 ```
+
+After exploring the example notes, run `npm run demo -- --clear` before adding your own.
+It removes only notes tagged `demo`.
 
 Or open the folder in your AI coding assistant and say **"set up my second brain."** It checks the
 machine, sets up your provider, adds your own filing rules, gets it onto your phone, and schedules
@@ -144,7 +149,8 @@ Every route is under `/api`. With `AUTH_TOKEN` set, send `Authorization: Bearer 
 
 - **Backups:** `npm run backup` writes a verified snapshot to `data/backups/` (and to
   `BACKUP_OFFSITE_DIR` if set). `node scripts/verify_backups.mjs` re-opens them to prove they
-  restore. Schedule both nightly.
+  restore. Schedule both nightly. These snapshots contain the database, including transcripts,
+  but not recordings or `data/conventions.md`; back those files up separately if you need them.
 - **Disk:** `node scripts/prune_audio.mjs` deletes audio older than `AUDIO_RETENTION_DAYS` (default
   180) and keeps every transcript.
 - **Tests:** `npm test` runs everything offline against local stubs, so it never calls a paid API.

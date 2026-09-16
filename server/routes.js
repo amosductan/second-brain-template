@@ -430,9 +430,9 @@ api.get('/tasks', (req, res) => {
   res.json({
     tasks: listTasks({
       states,
-      category: req.query.category || null,
-      tag: req.query.tag || null,
-      limit: Math.min(Number(req.query.limit) || 200, 1000),
+      category: String(req.query.category || '') || null,
+      tag: String(req.query.tag || '') || null,
+      limit: intParam(req.query.limit, 200, 1, 1000),
     }),
     stats: taskStats(),
   });
@@ -441,6 +441,9 @@ api.get('/tasks', (req, res) => {
 api.patch('/tasks/:id', express.json(), (req, res) => {
   if (!getTask(req.params.id)) return res.status(404).json({ error: 'Not found' });
   const { state, note } = req.body || {};
+  if (note !== undefined && note !== null && typeof note !== 'string') {
+    return res.status(400).json({ error: 'note must be a string or null' });
+  }
   if (state !== undefined && !taskStates().includes(state)) {
     return res.status(400).json({ error: `state must be one of ${taskStates().join(', ')}` });
   }
