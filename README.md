@@ -48,7 +48,7 @@ search + chat   full-text search over every note; a chat agent that searches bef
 Every model call and every transcription is logged with the tokens and audio minutes the provider
 reported. `npm run costs` shows the total, per note and per model.
 
-For scale: the original app, used heavily for a month (249 notes, about 2,070 minutes of audio), was
+For scale: the original app, used for a month (249 notes, about 2,070 minutes of audio), was
 reconstructed from its own record at about $30, or roughly $0.12 a note. Transcription was the
 largest single piece ($12.42), and filing notes with an Opus-class model was $11.58. That estimate
 excludes chat, which the original app has used very little.
